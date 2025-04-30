@@ -23,6 +23,77 @@ os.environ["TMPDIR"] = "./tmp"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Define personas with their prompt templates
+PERSONAS = {
+    "General": {
+        "description": "Provides accurate and context-aware answers based on the PDF content.",
+        "prompt": """
+        You are an AI assistant providing accurate and context-aware responses based on the uploaded document. 
+        Use the information from the provided context to answer the question concisely and clearly. 
+        If the context does not contain enough relevant information, respond with: "I'm not sure about that, but I'd be happy to help if you provide more details!"
+        
+        ### Context:
+        {context}
+        
+        ### Question:
+        {question}
+        
+        ### Answer:
+        """
+    },
+    "Research Paper Reviewer": {
+        "description": "Critically evaluates the PDF as a research paper, focusing on methodology, evidence, and novelty.",
+        "prompt": """
+        You are an expert academic reviewer tasked with critically evaluating a research paper provided in the uploaded document. 
+        Use the context to analyze the paper's methodology, evidence, results, citations, and novelty. 
+        Provide a detailed and critical response to the question, highlighting strengths, weaknesses, and gaps in the research. 
+        If the context lacks relevant information, state: "The provided document does not contain enough information to evaluate this aspect."
+        
+        ### Context:
+        {context}
+        
+        ### Question:
+        {question}
+        
+        ### Answer:
+        """
+    },
+    "Layman Explainer": {
+        "description": "Explains the PDF content in simple terms for a non-expert audience.",
+        "prompt": """
+        You are an AI assistant tasked with explaining the content of the uploaded document in simple, easy-to-understand language for a general audience. 
+        Avoid technical jargon and use analogies or examples where possible. 
+        Use the provided context to answer the question clearly and concisely. 
+        If the context lacks relevant information, respond with: "I'm not sure about that, but I'd be happy to explain more if you provide additional details!"
+        
+        ### Context:
+        {context}
+        
+        ### Question:
+        {question}
+        
+        ### Answer:
+        """
+    },
+    "Content Summarizer": {
+        "description": "Provides concise summaries of the PDF's key points.",
+        "prompt": """
+        You are an AI assistant tasked with summarizing the key points of the uploaded document. 
+        Use the provided context to generate a concise summary that captures the main ideas, findings, or arguments relevant to the question. 
+        Keep the response brief and focused, avoiding unnecessary details. 
+        If the context lacks relevant information, respond with: "The document does not provide enough information to summarize this aspect."
+        
+        ### Context:
+        {context}
+        
+        ### Question:
+        {question}
+        
+        ### Answer:
+        """
+    }
+}
+
 # Function to chunk documents
 def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
     """Chunk documents into fixed-size pieces using RecursiveCharacterTextSplitter."""
@@ -39,7 +110,7 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
     return chunks
 
 # Function to initialize RAG system
-def initialize_rag_system(pdf_path):
+def initialize_rag_system(pdf_path, persona="General"):
     logger.info("Loading Gemini model...")
     try:
         llm = ChatGoogleGenerativeAI(
@@ -102,22 +173,9 @@ def initialize_rag_system(pdf_path):
         st.error("Failed to initialize the search system. Please try again.")
         return None, None, None
 
-    template = """
-    You are an AI assistant providing accurate and context-aware responses based on the uploaded document. 
-    Use the information from the provided context to answer the question concisely and clearly. 
-    
-    If the context does not contain enough relevant information, respond with: "I'm not sure about that, but I'd be happy to help if you provide more details!"
-    
-    ### Context:
-    {context}
-    
-    ### Question:
-    {question}
-    
-    ### Answer:
-    """
-    
-    prompt = PromptTemplate.from_template(template)
+    # Select prompt template based on persona
+    persona_prompt = PERSONAS.get(persona, PERSONAS["General"])["prompt"]
+    prompt = PromptTemplate.from_template(persona_prompt)
     parser = StrOutputParser()
     chain = LLMChain(llm=llm, prompt=prompt, output_parser=parser)
 
@@ -125,7 +183,7 @@ def initialize_rag_system(pdf_path):
 
 # Streamlit interface
 st.title("PDF Chatbot")
-st.write("Upload a PDF and ask questions about its content.")
+st.write("Upload a PDF and ask questions about its content with a chosen persona.")
 
 # Initialize session state
 if "retriever" not in st.session_state:
@@ -136,6 +194,20 @@ if "chain" not in st.session_state:
     st.session_state.chain = None
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "persona" not in st.session_state:
+    st.session_state.persona = "General"
+
+# Persona selection
+st.subheader("Select a Persona")
+persona_options = list(PERSONAS.keys())
+selected_persona = st.selectbox(
+    "Choose how the chatbot should respond:",
+    options=persona_options,
+    index=persona_options.index(st.session_state.persona),
+    help="Select a persona to tailor the chatbot's response style."
+)
+st.session_state.persona = selected_persona
+st.write(f"**Persona Description**: {PERSONAS[selected_persona]['description']}")
 
 # PDF upload
 uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
@@ -145,9 +217,11 @@ if uploaded_file is not None:
         tmp_file.write(uploaded_file.read())
         pdf_path = tmp_file.name
 
-    # Initialize RAG system
+    # Initialize RAG system with selected persona
     with st.spinner("Processing PDF..."):
-        st.session_state.retriever, st.session_state.vectorstore, st.session_state.chain = initialize_rag_system(pdf_path)
+        st.session_state.retriever, st.session_state.vectorstore, st.session_state.chain = initialize_rag_system(
+            pdf_path, persona=st.session_state.persona
+        )
     
     # Clean up temporary file
     os.unlink(pdf_path)
@@ -178,7 +252,7 @@ if st.session_state.retriever is not None:
                     context_docs = st.session_state.retriever.invoke(prompt)
                     max_similarity = max([st.session_state.vectorstore.similarity_search_with_score(prompt, k=1)[0][1] for _ in context_docs], default=0)
                     if max_similarity < 0.25:
-                        answer = "I'm not sure about that, but I'd be happy to help if you provide more details!"
+                        answer = PERSONAS[st.session_state.persona]["prompt"].split("If the context")[1].split("###")[0].strip()
                     else:
                         context_text = "\n".join([doc.page_content for doc in context_docs])
                         response = st.session_state.chain.invoke({"context": context_text, "question": prompt})
