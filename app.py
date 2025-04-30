@@ -16,11 +16,18 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 import tempfile
 
-# Download NLTK punkt tokenizer if not present
+# Configure NLTK data path and download punkt
 nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
-if not os.path.exists(nltk_data_path):
-    nltk.download('punkt', download_dir=nltk_data_path)
-nltk.data.path.append(nltk_data_path)
+os.makedirs(nltk_data_path, exist_ok=True)
+try:
+    nltk.data.path.append(nltk_data_path)
+    if not os.path.exists(os.path.join(nltk_data_path, "tokenizers", "punkt")):
+        logger.info("Downloading NLTK punkt tokenizer...")
+        nltk.download('punkt', download_dir=nltk_data_path, quiet=True)
+    logger.info("NLTK punkt tokenizer ready.")
+except Exception as e:
+    logger.error(f"Failed to download NLTK punkt: {str(e)}")
+    st.error("Failed to initialize NLTK tokenizer. Please try again later.")
 
 # Configure environment
 os.environ["HF_HOME"] = "./cache"
@@ -36,9 +43,13 @@ def semantic_chunk_with_embeddings(documents, embeddings, max_chunk_size=1000, m
     """Chunk documents into semantically related groups using embeddings and clustering."""
     all_chunks = []
     for doc in documents:
-        sentences = nltk.sent_tokenize(doc.page_content)
-        if len(sentences) < min_sentences:
-            all_chunks.append(Document(page_content=" ".join(sentences), metadata=doc.metadata))
+        try:
+            sentences = nltk.sent_tokenize(doc.page_content)
+            if len(sentences) < min_sentences:
+                all_chunks.append(Document(page_content=" ".join(sentences), metadata=doc.metadata))
+                continue
+        except Exception as e:
+            logger.error(f"Sentence tokenization failed: {str(e)}")
             continue
 
         sentence_embeddings = embeddings.embed_documents(sentences)
@@ -107,6 +118,9 @@ def initialize_rag_system(pdf_path):
         return None, None, None
 
     pdf_docs = semantic_chunk_with_embeddings(pages, embeddings)
+    if not pdf_docs:
+        st.error("Failed to process the PDF content. Please try a different file.")
+        return None, None, None
 
     all_docs = pdf_docs
     unique_docs = {doc.page_content: doc for doc in all_docs}.values()
@@ -177,6 +191,8 @@ if uploaded_file is not None:
     
     if st.session_state.retriever is not None:
         st.success("PDF processed successfully! You can now ask questions.")
+    else:
+        st.error("Failed to process the PDF. Please try again.")
 
 # Chat interface
 if st.session_state.retriever is not None:
