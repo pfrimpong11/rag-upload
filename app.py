@@ -16,8 +16,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 import tempfile
 
-# Configure NLTK and environment
-nltk.data.path.append("./nltk_data")
+# Download NLTK punkt tokenizer if not present
+nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
+if not os.path.exists(nltk_data_path):
+    nltk.download('punkt', download_dir=nltk_data_path)
+nltk.data.path.append(nltk_data_path)
+
+# Configure environment
 os.environ["HF_HOME"] = "./cache"
 os.environ["XDG_CACHE_HOME"] = "./cache"
 os.environ["TMPDIR"] = "./tmp"
@@ -70,7 +75,7 @@ def initialize_rag_system(pdf_path):
     logger.info("Loading Gemini model...")
     try:
         llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-pro",
+            model="gemini-2.0-flash",
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0.3,
             top_p=0.9,
