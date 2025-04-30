@@ -16,6 +16,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 import tempfile
 
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
 # Configure NLTK data path and download punkt
 nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_path, exist_ok=True)
@@ -34,9 +38,6 @@ os.environ["HF_HOME"] = "./cache"
 os.environ["XDG_CACHE_HOME"] = "./cache"
 os.environ["TMPDIR"] = "./tmp"
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
 
 # Semantic chunking function
 def semantic_chunk_with_embeddings(documents, embeddings, max_chunk_size=1000, min_sentences=2, overlap_sentences=1):
