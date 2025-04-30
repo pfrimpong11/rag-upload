@@ -1,0 +1,4 @@
+[server]
+fileWatcherType = "none"
+[runner]
+magicEnabled = false

@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from langchain_core.output_parsers import StrOutputParser
@@ -87,7 +87,15 @@ def initialize_rag_system(pdf_path):
         return None, None, None
 
     logger.info("Loading embeddings...")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    try:
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"}
+        )
+    except Exception as e:
+        logger.error(f"Embeddings loading failed: {str(e)}")
+        st.error("Failed to load embeddings. Please try again.")
+        return None, None, None
 
     logger.info("Loading PDF...")
     try:
@@ -106,11 +114,16 @@ def initialize_rag_system(pdf_path):
         doc.metadata["doc_id"] = i
 
     logger.info("Building vector store...")
-    vectorstore = FAISS.from_documents(list(unique_docs), embedding=embeddings)
-    faiss_retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
-    bm25_retriever = BM25Retriever.from_documents(list(unique_docs))
-    bm25_retriever.k = 4
-    retriever = EnsembleRetriever(retrievers=[faiss_retriever, bm25_retriever], weights=[0.5, 0.5])
+    try:
+        vectorstore = FAISS.from_documents(list(unique_docs), embedding=embeddings)
+        faiss_retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+        bm25_retriever = BM25Retriever.from_documents(list(unique_docs))
+        bm25_retriever.k = 4
+        retriever = EnsembleRetriever(retrievers=[faiss_retriever, bm25_retriever], weights=[0.5, 0.5])
+    except Exception as e:
+        logger.error(f"Vector store or retriever initialization failed: {str(e)}")
+        st.error("Failed to initialize the search system. Please try again.")
+        return None, None, None
 
     template = """
     You are an AI assistant providing accurate and context-aware responses based on the uploaded document. 
